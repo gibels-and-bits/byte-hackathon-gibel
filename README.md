@@ -1,258 +1,172 @@
-# 🧾 ReceiptCraft: A Byte AI Hackathon for the Vibes
+# ReceiptCraft - Visual Receipt Designer for BytePOS
 
-In this exercise, you’ll build a browser-based receipt designer that allows non-technical users to define how receipts should look—text, barcodes, images, dynamic fields, and more.
+A modern, browser-based receipt designer with drag-and-drop functionality, built for the BytePOS hackathon. This "Extra Crispy" implementation includes a visual layout editor, DSL compilation, and interpretation for Epson printers.
 
-This feature would allow brand data managers to define their own store receipts without waiting for a new BytePOS build. It lays the groundwork for a no-code tool that outputs a portable format we could send directly to devices in the field.
+## 🚀 Features
 
-We’ll be "vibe coding" the solution using a preconfigured template, which makes a few intentional choices to keep you focused on what matters—or at least what’s fun.
+- **Visual Editor**: Drag-and-drop interface for designing receipts
+- **Component Library**: Pre-built components for text, barcodes, QR codes, tables, and more
+- **Real-time Preview**: See your receipt rendered using HTML5 Canvas
+- **DSL Compilation**: Converts visual layouts to printer-compatible commands
+- **Token System**: Dynamic value replacement for receipts (order numbers, totals, etc.)
+- **Dark Mode UI**: Modern, developer-friendly interface
 
----
+## 🛠️ Tech Stack
 
-## The Task
+- **Next.js 15.3.4** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first styling
+- **@dnd-kit** - Drag and drop functionality
+- **HTML5 Canvas** - Receipt rendering
 
-BytePOS currently generates receipts through a Kotlin-based DSL interpreted into commands for Epson printers. But each change requires engineering effort and redeploying binaries.
+## 📁 Project Structure
 
-Your mission is to flip that model: make a tool that allows **non-engineers to author receipts visually**. That tool should:
-
-- Let users compose a receipt using visual building blocks (text, barcodes, images, etc.)
-- Show a real-time preview of how the receipt will look when printed
-- Optionally: convert that layout into a portable DSL and render it using a mock printer interface
-
-The goal is to separate receipt design from deployment so that brands can customize their own layouts at any time.
-
----
-
-## Tech Stack: Why Next.js?
-
-This project uses **Next.js** with the **App Router**, **TypeScript**, and Tailwind CSS.
-
-We chose Next.js because:
-- It works well with agentic tools (in my limited experience)
-- It supports a clean file-based routing model for rapid prototyping
-- It provides hot-reloading and an embedded server for instant iteration
-- It encourages good architectural separation between layout, state, and view logic
-
-You don’t need to be an expert in the Next.js ecosystem. If something’s unfamiliar, ask Claude or experiment freely.
-
----
-
-## Choose Your Path
-
-### 🍗 Regular Recipe
-
-Build the **visual layout editor** and an in-browser preview. Define a way for non-technical users to build receipts visually—drag and drop, toggle switches, freeform JSON, whatever you think works.
-
-There should be a way to switch between edit and preview mode.
-
-**Ideal for:**
-- Participants newer to frontend engineering
-- Those who want to prioritize UI and design polish
-- Quickly building something visual and usable
-
----
-
-### 🍗 Extra Crispy
-
-Take it a step further:
-
-- Design a **custom DSL** to represent your layout
-- Write a **compiler** to generate that DSL from your editor state
-- Write an **interpreter** that renders the DSL using a mock Epson printer API
-
-**Ideal for:**
-- Participants interested in structured data formats and reusable abstractions
-- Engineers excited about seeing their logic shipped in future BytePOS builds 😉
-
----
-
-## What You'll Build
-
-| Component                | Regular Recipe | Extra Crispy |
-|--------------------------|----------------|---------------|
-| Visual layout editor     | ✅             | ✅             |
-| Layout model in React    | ✅             | ✅             |
-| Receipt preview in React | ✅             | (optional)     |
-| DSL format               | ❌             | ✅             |
-| `compile()` function     | ❌             | ✅             |
-| `interpret()` function   | ❌             | ✅             |
-
----
-## Some (Maybe) Helpful Notes & Direction
-### Dynamic Fields
-
-Receipts aren't static—they adapt per store, per transaction. Your tool should support **tokens** like:
-
-- `{store_name}`
-- `{cashier_name}`
-- `{timestamp}`
-- `{order_number}`
-- `{subtotal}`
-- `{item_list}`
-
-These tokens represent runtime data. You can render them as-is or fill them with mock data in your preview.
-
-*ponderin' question* - How you gonna make sure these are in sync with the POS capabilities?
-
----
-
-### Understanding the Compiler and Interpreter
-
-In **Extra Crispy Mode**, you’ll implement two interfaces and their corresponding classes:
-
-#### `ReceiptCompiler` Interface
-
-```typescript
-export interface ReceiptCompiler {
-    compile(layout: LayoutModel): ReceiptDSL;
-}
+```
+src/
+├── app/                    # Next.js app router pages
+│   ├── page.tsx           # Home page with demo
+│   ├── editor/            # Visual receipt editor
+│   ├── component-library/ # Component showcase
+│   └── demo/              # Printer demo
+├── components/            # React components
+│   └── receipt-components/ # Individual receipt components
+├── interfaces/            # TypeScript interfaces
+├── compiler.ts            # Layout to DSL compiler
+├── interpreter.ts         # DSL command interpreter
+└── html-canvas-printer.ts # Canvas-based printer implementation
 ```
 
-Converts the internal layout model into a portable DSL. This DSL could be sent over the wire to a POS device.
+## 🚦 Getting Started
 
-**Input:**
-- `layout`: Your layout model (extend the base `LayoutModel` interface)
-
-**Output:**
-- `ReceiptDSL`: your custom DSL format—could be JSON, an array of commands, or something creative
-
----
-
-#### `ReceiptInterpreter` Interface
-
-```typescript
-export interface ReceiptInterpreter {
-    interpret(printer: EpsonPrinter, dsl: ReceiptDSL): void;
-}
-```
-
-Takes the DSL and issues method calls to the provided printer mock.
-
-**Input:**
-- `printer`: instance of `EpsonPrinter` (e.g., `HTMLCanvasEpsonPrinter`)
-- `dsl`: output from your `compile()` method
-
-**Expected behavior:**
-- Walk through the DSL and call printer methods like:
-
-```ts
-printer.addText("...")
-printer.addBarcode("...")
-printer.addFeedLine(1)
-printer.cutPaper()
-```
-
-> Rendering logic is handled for you—the printer mock takes care of visualization.
-
----
-
-### HTMLCanvasEpsonPrinter API
-
-The `HTMLCanvasEpsonPrinter` mirrors the Android Epson SDK 1:1 and renders all commands to an on-screen HTML5 canvas.
-
-It includes methods like:
-
-```ts
-printer.addText("Welcome to Taco Bell")
-printer.addBarcode("1234567890", BarcodeType.CODE39, ...)
-printer.addFeedLine(1)
-printer.cutPaper()
-```
-
-This means: if your interpreter works here, it can be re-implemented in Kotlin for the real printer integration with minimal changes.
-
----
-
-## 🏁 Getting Started
-
-1. Clone the starter repo:
+1. **Install dependencies**:
    ```bash
-   git clone https://github.com/gibels-and-bits/receiptCraft.git
-   cd receiptCraft
    npm install
+   ```
+
+2. **Run the development server**:
+   ```bash
    npm run dev
    ```
 
-2. Visit [http://localhost:3000](http://localhost:3000) in your browser
+3. **Open your browser**:
+   Navigate to [http://localhost:3000](http://localhost:3000)
 
-3. Choose your path: 🍗 Regular or 🍗 Extra Crispy  
-   Stub files for both are included.
+## 📝 Usage
 
----
+### Visual Editor
 
-## What's Provided in the Starter Repo
+1. Navigate to the Visual Editor from the home page
+2. Drag components from the palette to the canvas
+3. Click on components to edit their properties
+4. Use arrow buttons to reorder components
+5. Preview your receipt or view the compiled DSL
 
-| File / Folder                    | Description |
-|----------------------------------|-------------|
-| `src/app/page.tsx`               | Entry page using Next.js App Router |
-| `src/app/layout.tsx`             | Root layout shared across routes |
-| `src/app/demo/page.tsx`          | Demo page showing sample receipt printing |
-| `src/interfaces/`                | Core interfaces (`epson-printer.ts`, `receipt-compiler.ts`, `receipt-interpreter.ts`, `receipt-models.ts`) |
-| `src/html-canvas-printer.ts`     | HTML5 Canvas mock printer implementing `EpsonPrinter` |
-| `src/compiler.ts`                | Stub class implementing `ReceiptCompiler` |
-| `src/interpreter.ts`             | Stub class implementing `ReceiptInterpreter` |
-| `src/components/`                | Prebuilt React components & demos |
+### Component Types
 
----
+- **Text**: Basic text with formatting options (bold, underline, size, alignment)
+- **Barcode**: Various formats (CODE128, CODE39, UPC_A, CODE93)
+- **QR Code**: With adjustable size and error correction
+- **Divider**: Horizontal lines (solid, dashed, double)
+- **Spacer**: Vertical spacing
+- **Row**: Multi-column layouts
+- **Table**: Structured data with headers
 
-## Stretch Goals
+### Token System
 
-Want to go above and beyond?
+Use tokens in your text for dynamic values:
+- `{store_name}` - Store name
+- `{order_number}` - Order number
+- `{total}` - Total amount
+- `{date}` - Transaction date
+- And many more...
 
-- Implement drag-and-drop layout editing
-- Provide preset templates (Taco Bell, KFC, etc.)
-- Add layout validation rules
-- Allow export/import of layouts
-- Simulate different paper widths or printer behaviors
-- Let users theme or brand receipts
-- Implement cascading layouts from full org down to 1 store
-- Add multilingual support
+## 🏗️ Architecture
 
----
+### Data Flow
 
-## Node.js + Next.js Basics
+1. **Visual Design**: Users create layouts using drag-and-drop components
+2. **Layout Model**: Components are stored in a structured format
+3. **Compilation**: The compiler converts layouts to DSL commands
+4. **Interpretation**: The interpreter executes DSL commands on the printer
+5. **Rendering**: HTML Canvas simulates the printer output
 
-### Dev Commands
+### Key Interfaces
 
-```bash
-npm install      # Install dependencies
-npm run dev      # Start dev server
+```typescript
+// Component structure
+interface Component {
+  id: string;
+  type: ComponentType;
+  // Component-specific properties
+}
+
+// DSL command structure
+interface DSLCommand {
+  type: DSLCommandType;
+  // Command-specific parameters
+}
+
+// Layout model
+interface ConcreteLayoutModel {
+  version: string;
+  metadata: Metadata;
+  components: Component[];
+  settings: Settings;
+}
 ```
 
-### Project Structure
+## 🎯 Hackathon Deliverables
 
-- `app/`: Page routes (using App Router)
-- `components/`: Your React UI blocks
-- `public/`: Static files (e.g., logos, images)
+This project implements the "Extra Crispy" option:
 
-### Styling with Tailwind
-This project uses Tailwind CSS for styling. You can apply styles directly in your components using utility classes:
-```tsx
-<div className="flex items-center justify-center">
-  <h1 className="text-2xl font-bold text-gray-800">
-    Your Receipt Content
-  </h1>
-</div>
-```
-Check out the [Tailwind documentation](https://tailwindcss.com/docs) for available utilities.
+✅ **Visual Layout Editor**: Full drag-and-drop interface with live editing  
+✅ **Component Library**: All required components plus extras  
+✅ **DSL Compilation**: Converts visual layouts to printer commands  
+✅ **Interpretation**: Executes DSL commands with token replacement  
+✅ **Preview Mode**: Real-time receipt rendering  
+✅ **Modern UI**: Dark mode, responsive design, smooth interactions  
 
-### Adding Components
+## 🔧 Development
 
-Create your components in the `components/` directory. Remember to add the `'use client'` directive at the top of any component file that uses browser features like:
-- Event handlers (onClick, onChange, etc.)
-- React state (useState, useReducer)
-- Browser APIs (localStorage, fetch, etc.)
-- Effects (useEffect)
+### Adding New Components
 
-Example:
-```tsx
-'use client';
+1. Define the component interface in `src/interfaces/receipt-models.ts`
+2. Create the React component in `src/components/receipt-components/`
+3. Add compilation logic in `src/compiler.ts`
+4. Update the component renderer in `src/components/receipt-components/index.ts`
 
-// Now you can use browser features in your component
-```
+### Extending the DSL
 
----
+1. Add new command types to `src/interfaces/receipt-models.ts`
+2. Implement compilation logic in `src/compiler.ts`
+3. Add interpretation logic in `src/interpreter.ts`
 
-## You're On Your Own
+## 🎨 Design Decisions
 
-Trust your instincts, find your flow state, and vibe. Whether you stick with the Regular recipe or go Extra Crispy, there’s something valuable to learn—about what these systems are great at, and where they fall short.
+- **TypeScript First**: Full type safety for better developer experience
+- **Component-Based**: Modular architecture for easy extension
+- **Dark Mode**: Reduces eye strain during long coding sessions
+- **Canvas Rendering**: Accurate receipt preview without external dependencies
+- **JSON DSL**: Human-readable intermediate format
+
+## 🚀 Future Enhancements
+
+- Save/load receipt templates
+- Export to various formats
+- Custom component creation
+- Multi-language support
+- Cloud storage integration
+- Real printer testing
+
+## 📄 License
+
+MIT License - see LICENSE file for details
+
+## 🏆 Hackathon Submission
+
+**Team**: Solo Developer  
+**Category**: Extra Crispy  
+**Time**: Completed within hackathon timeframe  
+
+Built with ❤️ for the BytePOS Hackathon
 
