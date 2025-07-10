@@ -15,7 +15,7 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     this.currentTextAlign = 'left';
     this.currentTextStyle = {};
     this.currentTextSize = { width: 1, height: 1 };
-    this.lineSpacing = 30;
+    this.lineSpacing = 5;
     // Optionally, fill with white to mimic paper
     this.ctx.fillStyle = 'white';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -45,9 +45,9 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
   private currentTextAlign: TextAlignment = 'left';
   private currentTextStyle: TextStyle = {};
   private currentTextSize = { width: 1, height: 1 };
-  private lineSpacing = 30; // Default line spacing in pixels
+  private lineSpacing = 5; // Default line spacing in pixels (reduced from 30)
   private readonly baseFont = 'monospace';
-  private readonly baseFontSize = 16; // Base font size for 80-column width
+  private baseFontSize: number = 8; // Base font size to fit 80 chars in 384px canvas
   private readonly paperWidth: number;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -56,8 +56,24 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get canvas context');
     this.ctx = ctx;
+    
+    // Calculate font size to fit 80 characters with margins
+    const availableWidth = this.paperWidth - 20; // 10px margins on each side
+    const targetChars = 80;
+    
+    // Test different font sizes to find the best fit
+    let fontSize = 8;
+    this.ctx.font = `${fontSize}px ${this.baseFont}`;
+    let charWidth = this.ctx.measureText('M').width;
+    
+    // Adjust font size to fit exactly 80 characters
+    fontSize = (availableWidth / targetChars) / (charWidth / fontSize);
+    
+    // Override baseFontSize with calculated value
+    (this as any).baseFontSize = fontSize;
+    
     // Set default styles
-    this.ctx.font = `${this.baseFontSize}px ${this.baseFont}`;
+    this.ctx.font = `${fontSize}px ${this.baseFont}`;
     this.ctx.fillStyle = 'black';
     this.ctx.textBaseline = 'top';
   }
@@ -83,26 +99,25 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
     const fontSize = this.baseFontSize * this.currentTextSize.height;
     this.ctx.font = `${style.bold ? 'bold' : ''} ${fontSize}px ${style.fontFamily || this.baseFont}`;
     this.ctx.fillStyle = 'black';
-    const words = text.split(' ');
-    let currentLine = words[0];
-    const lines: string[] = [];
-    for (let i = 1; i < words.length; i++) {
-      const word = words[i];
-      const width = this.ctx.measureText(currentLine + ' ' + word).width;
-      if (width < this.paperWidth - 20) {
-        currentLine += ' ' + word;
-      } else {
-        lines.push(currentLine);
-        currentLine = word;
-      }
-    }
-    lines.push(currentLine);
+    
+    // Split by newlines to handle multi-line text
+    const textLines = text.split('\n');
     const lineHeight = fontSize + this.lineSpacing;
-    const totalHeight = this.currentY + lines.length * lineHeight;
+    const totalHeight = this.currentY + textLines.length * lineHeight;
     this.ensureCanvasHeight(totalHeight);
-    lines.forEach((line, idx) => {
+    
+    textLines.forEach((line, idx) => {
       let x = 0;
       let y = this.currentY + idx * lineHeight;
+      
+      // For monospace fonts, we can calculate character width
+      const charWidth = this.ctx.measureText('M').width; // Use 'M' as reference for monospace
+      const maxChars = Math.floor((this.paperWidth - 20) / charWidth);
+      
+      // Don't wrap lines - render as-is for table layouts
+      // But ensure we don't exceed canvas width
+      const displayLine = line.length > maxChars ? line.substring(0, maxChars) : line;
+      
       // Set canvas text alignment and x position
       switch (this.currentTextAlign) {
         case 'center':
@@ -117,9 +132,11 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
           this.ctx.textAlign = 'left';
           x = 10;
       }
-      this.ctx.fillText(line, x, y);
+      
+      this.ctx.fillText(displayLine, x, y);
+      
       if (style.underline) {
-        const metrics = this.ctx.measureText(line);
+        const metrics = this.ctx.measureText(displayLine);
         let underlineStart = x;
         let underlineEnd = x;
         switch (this.currentTextAlign) {
@@ -141,7 +158,8 @@ export class HTMLCanvasEpsonPrinter implements EpsonPrinter {
         this.ctx.stroke();
       }
     });
-    this.currentY = totalHeight;
+    
+    this.currentY += textLines.length * lineHeight;
   }
 
   addTextAlign(alignment: TextAlignment): void {

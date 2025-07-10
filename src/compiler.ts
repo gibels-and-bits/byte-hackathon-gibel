@@ -262,94 +262,118 @@ export class ConcreteReceiptCompiler implements ReceiptCompiler {
   
   private compileTableComponent(component: TableComponent): DSLCommand[] {
     const commands: DSLCommand[] = [];
+    const paperWidth = 80; // Standard receipt width in characters
     
-    // Extract tokens from all cells
-    const tokens = new Set<string>();
-    
-    // Check rows for tokens (including nested components)
+    // Process each row
     component.rows.forEach(row => {
-      Object.values(row).forEach(value => {
-        if (typeof value === 'string') {
-          extractTokens(value).forEach(t => tokens.add(t));
-        } else if (value && typeof value === 'object' && 'type' in value) {
-          // It's a component - compile it recursively
-          const nestedCommands = this.compileComponent(value as Component);
-          nestedCommands.forEach(cmd => {
-            if ('tokens' in cmd && Array.isArray((cmd as any).tokens)) {
-              ((cmd as any).tokens as string[]).forEach((t: string) => tokens.add(t));
-            }
-          });
-        }
-      });
-    });
-    
-    // Compile data rows
-    component.rows.forEach(row => {
-      const rowColumns = component.columns.map(col => {
+      // First, check if any cell contains a component that needs special handling
+      const hasComplexComponents = component.columns.some(col => {
         const cellValue = row[col.key];
-        
-        if (typeof cellValue === 'string') {
+        return cellValue && typeof cellValue === 'object' && 
+               'type' in cellValue && 
+               ['barcode', 'qrcode', 'image', 'divider', 'spacer'].includes((cellValue as Component).type);
+      });
+      
+      if (hasComplexComponents) {
+        // Handle row with complex components - compile each component separately
+        component.columns.forEach(col => {
+          const cellValue = row[col.key];
+          if (cellValue && typeof cellValue === 'object' && 'type' in cellValue) {
+            // Compile the component directly
+            const componentCommands = this.compileComponent(cellValue as Component);
+            commands.push(...componentCommands);
+          }
+        });
+      } else {
+        // Handle row with only text components - use column layout
+        const rowColumns = component.columns.map(col => {
+          const cellValue = row[col.key];
+          let content = '';
+          
+          if (typeof cellValue === 'string') {
+            content = cellValue;
+          } else if (cellValue && typeof cellValue === 'object' && 'type' in cellValue) {
+            // Get text content from component
+            content = this.getComponentText(cellValue as Component);
+          }
+          
           return {
             start: 0, // Will be calculated
             end: 0,   // Will be calculated
-            content: cellValue || '',
+            content: content,
             alignment: col.alignment || 'left'
           };
-        } else if (cellValue && typeof cellValue === 'object' && 'type' in cellValue) {
-          // Handle nested component - for now, render as placeholder
-          // In a real implementation, we might need to handle this differently
-          return {
-            start: 0,
-            end: 0,
-            content: `[${(cellValue as Component).type}]`,
-            alignment: col.alignment || 'left'
-          };
-        } else {
-          // undefined or null - empty cell
-          return {
-            start: 0,
-            end: 0,
-            content: '',
-            alignment: col.alignment || 'left'
-          };
-        }
-      });
-      
-      // Calculate column positions based on widths
-      let currentPos = 0;
-      const totalWidth = 80; // Standard receipt width in characters
-      
-      rowColumns.forEach((rCol, index) => {
-        const colDef = component.columns[index];
-        let width = 0;
+        });
         
-        if (colDef.width === 'fill') {
-          width = 10; // Placeholder - should calculate based on remaining space
-        } else if (colDef.width === 'auto') {
-          width = Math.max(rCol.content.length, 10);
-        } else if (typeof colDef.width === 'string' && colDef.width.endsWith('%')) {
-          const percentage = parseInt(colDef.width);
-          width = Math.floor((percentage / 100) * totalWidth);
-        } else {
-          width = 10;
+        // Calculate column positions based on widths
+        let currentPos = 0;
+        
+        // First, calculate total percentage used
+        const percentageColumns = component.columns
+          .filter(c => typeof c.width === 'string' && c.width.endsWith('%'));
+        const totalPercentage = percentageColumns
+          .reduce((sum, c) => sum + parseInt(c.width as string), 0);
+        
+        // Calculate widths for all columns
+        const columnWidths: number[] = [];
+        component.columns.forEach((colDef, index) => {
+          let width = 0;
+          
+          if (typeof colDef.width === 'string' && colDef.width.endsWith('%')) {
+            const percentage = parseInt(colDef.width);
+            // If percentages don't sum to 100%, scale them proportionally
+            if (totalPercentage > 0 && totalPercentage !== 100) {
+              width = Math.floor((percentage / totalPercentage) * paperWidth);
+            } else {
+              width = Math.floor((percentage / 100) * paperWidth);
+            }
+          } else if (colDef.width === 'auto') {
+            // For auto, use content length with minimum
+            width = Math.max(rowColumns[index].content.length + 2, 10);
+          } else if (colDef.width === 'fill') {
+            // Will be calculated after we know the space taken by other columns
+            width = 0;
+          } else {
+            width = 10; // Default width
+          }
+          
+          columnWidths[index] = width;
+        });
+        
+        // Calculate remaining space for 'fill' columns
+        const usedWidth = columnWidths.reduce((sum, w) => sum + w, 0);
+        const remainingWidth = paperWidth - usedWidth;
+        const fillColumns = component.columns.filter(c => c.width === 'fill').length;
+        
+        if (fillColumns > 0 && remainingWidth > 0) {
+          const fillWidth = Math.floor(remainingWidth / fillColumns);
+          component.columns.forEach((colDef, index) => {
+            if (colDef.width === 'fill') {
+              columnWidths[index] = fillWidth;
+            }
+          });
+        } else if (percentageColumns.length === component.columns.length && remainingWidth > 0) {
+          // If all columns are percentage-based and there's remaining space,
+          // distribute it to ensure we use the full width
+          const extraPerColumn = Math.floor(remainingWidth / component.columns.length);
+          const extraRemainder = remainingWidth % component.columns.length;
+          columnWidths.forEach((w, i) => {
+            columnWidths[i] += extraPerColumn + (i < extraRemainder ? 1 : 0);
+          });
         }
         
-        rCol.start = currentPos;
-        rCol.end = currentPos + width;
-        currentPos += width;
-      });
-      
-      const columnCommand: DSLCommand = {
-        type: 'columnLayout',
-        columns: rowColumns
-      };
-      
-      // Only add tokens if there are any
-      if (tokens.size > 0) {
-        (columnCommand as any).tokens = Array.from(tokens);
+        // Now assign positions
+        rowColumns.forEach((rCol, index) => {
+          rCol.start = currentPos;
+          rCol.end = currentPos + columnWidths[index];
+          currentPos += columnWidths[index];
+        });
+        
+        commands.push({
+          type: 'columnLayout',
+          columns: rowColumns
+        });
       }
-      
-      commands.push(columnCommand);
     });
     
     return commands;
@@ -374,9 +398,17 @@ export class ConcreteReceiptCompiler implements ReceiptCompiler {
       case 'text':
         return (component as TextComponent).content;
       case 'barcode':
-        return `[Barcode: ${(component as BarcodeComponent).data}]`;
+        return (component as BarcodeComponent).data;
       case 'qrcode':
-        return `[QR: ${(component as QRCodeComponent).data}]`;
+        return (component as QRCodeComponent).data;
+      case 'divider':
+        const divider = component as DividerComponent;
+        const char = divider.character || '-';
+        return char.repeat(10); // Simplified representation
+      case 'spacer':
+        return ' '.repeat((component as SpacerComponent).lines);
+      case 'image':
+        return '[Image]'; // Images can't be represented as text
       default:
         return '';
     }

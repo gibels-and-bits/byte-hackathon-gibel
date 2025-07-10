@@ -138,32 +138,25 @@ export class ConcreteReceiptInterpreter implements ReceiptInterpreter {
   private executeColumnLayout(command: DSLCommand): void {
     if (command.type !== 'columnLayout') return;
     
-    // For canvas printer, we'll simulate columns by calculating positions
-    const paperWidth = 384; // pixels
-    const charWidth = paperWidth / 80; // 80 chars per line
-    
-    // Find the maximum x position to determine if we need multiple lines
-    let lines: string[] = [''];
+    // Build a line with proper column positioning
+    const lineChars = new Array(80).fill(' '); // Start with 80 spaces
     
     for (const column of command.columns) {
       const content = this.replaceTokens(column.content);
-      const startPixel = column.start * charWidth;
-      const endPixel = column.end * charWidth;
-      const width = endPixel - startPixel;
+      const columnWidth = column.end - column.start;
       
-      // Add the text at the appropriate position
-      // For simplicity, we'll create a single line with spacing
-      const currentLine = lines[lines.length - 1];
-      const spacesNeeded = Math.max(0, column.start - currentLine.length);
-      const paddedContent = ' '.repeat(spacesNeeded) + this.fitTextToWidth(content, column.end - column.start, column.alignment);
+      // Fit text to column width with alignment
+      const fittedText = this.fitTextToWidth(content, columnWidth, column.alignment);
       
-      lines[lines.length - 1] = currentLine + paddedContent;
+      // Place the fitted text at the correct position
+      for (let i = 0; i < fittedText.length && column.start + i < 80; i++) {
+        lineChars[column.start + i] = fittedText[i];
+      }
     }
     
-    // Print the formatted line(s)
-    for (const line of lines) {
-      this.printer.addText(line);
-    }
+    // Convert array to string and print
+    const line = lineChars.join('');
+    this.printer.addText(line.trimEnd()); // Trim trailing spaces
   }
   
   private fitTextToWidth(text: string, width: number, alignment: 'left' | 'center' | 'right'): string {
